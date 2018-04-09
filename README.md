@@ -1,1 +1,2 @@
-# NLP-Answering-Reading-Comprehension
+# CS671
+CS671 Project
