@@ -27,6 +27,8 @@ wordnet_lemmatizer = WordNetLemmatizer()
 tokenizer = RegexpTokenizer(r'[^\s]+')
 
 
+NUMCONTEXT = 1000
+
 def tokenize(sent):
     '''Return the tokens of a sentence including punctuation.
     >>> tokenize('Bob dropped the apple. Where is the apple?')
@@ -113,79 +115,27 @@ def que_tokenizer(data):
     #return tokens
 
 
-# try:
-#     path = get_file('babi-tasks-v1-2.tar.gz', origin='https://s3.amazonaws.com/text-datasets/babi_tasks_1-20_v1-2.tar.gz')
-# except:
-#     print('Error downloading dataset, please download it manually:\n'
-#           '$ wget http://www.thespermwhale.com/jaseweston/babi/tasks_1-20_v1-2.tar.gz\n'
-#           '$ mv tasks_1-20_v1-2.tar.gz ~/.keras/datasets/babi-tasks-v1-2.tar.gz')
-#     raise
-
-
-# challenges = {
-#     # QA1 with 10,000 samples
-#     'single_supporting_fact_10k': 'tasks_1-20_v1-2/en-10k/qa1_single-supporting-fact_{}.txt',
-#     # QA2 with 10,000 samples
-#     'two_supporting_facts_10k': 'tasks_1-20_v1-2/en-10k/qa2_two-supporting-facts_{}.txt',
-# }
-# challenge_type = 'single_supporting_fact_10k'
-# challenge = challenges[challenge_type]
-
-# print('Extracting stories for the challenge:', challenge_type)
-# with tarfile.open(path) as tar:
-#     train_stories = get_stories(tar.extractfile(challenge.format('train')))
-#     test_stories = get_stories(tar.extractfile(challenge.format('test')))
-
-# vocab = set()
-# for story, q, answer in train_stories + test_stories:
-#     vocab |= set(story + q + [answer])
-# vocab = sorted(vocab)
-
-# # Reserve 0 for masking via pad_sequences
-# vocab_size = len(vocab) + 1
-# story_maxlen = max(map(len, (x for x, _, _ in train_stories + test_stories)))
-# query_maxlen = max(map(len, (x for _, x, _ in train_stories + test_stories)))
-
-# print('-')
-# print('Vocab size:', vocab_size, 'unique words')
-# print('Story max length:', story_maxlen, 'words')
-# print('Query max length:', query_maxlen, 'words')
-# print('Number of training stories:', len(train_stories))
-# print('Number of test stories:', len(test_stories))
-# print('-')
-# print('Here\'s what a "story" tuple looks like (input, query, answer):')
-# print(train_stories[0])
-# print('-')
-# print('Vectorizing the word sequences...')
-
-# word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
-# inputs_train, queries_train, answers_train = vectorize_stories(train_stories)
-# inputs_test, queries_test, answers_test = vectorize_stories(test_stories)
-
-
-
-
 context_file = open(os.path.join('./data/', 'train_context'), 'r')
-c = unicode(context_file.read(), 'utf-8')
+c = context_file.read()
 context = re.split('\n' + '-' + '\n', c)
 del c
 
 question_file = open(os.path.join('./data/', 'train_question'), 'r')
-c = unicode(question_file.read(), 'utf-8')
+c = question_file.read()
 questions = re.split('\n' + '-' + '\n', c)
 del c
 
 answer_file = open(os.path.join('./data/', 'train_answer'), 'r')
-c = unicode(answer_file.read(), 'utf-8')
+c = answer_file.read()
 answers = re.split('\n' + '-' + '\n', c)
 del c
 
 span_file = open(os.path.join('./data/', 'train_span'), 'r')
-c = unicode(span_file.read(), 'utf-8')
+c = span_file.read()
 spa = re.split('\n' + '-' + '\n', c)
 del c
 
-context = context[0:100]
+context = context[0:NUMCONTEXT]
 
 inp = []
 que = []
@@ -222,7 +172,7 @@ print(len(inp))
 
 vocab = set()
 for i in range(0,len(inp)):
-    vocab |= set(inp[i] + que[i] + ans[i])
+    vocab |= set(inp[i] + que[i])
 vocab = sorted(vocab)
 print(len(vocab))
 
@@ -243,8 +193,10 @@ queries_train = queries[0:k]
 queries_test = queries[k:len(inp)]
 answers_train = answers[0:k]
 answers_test = answers[k:len(inp)]
-
-
+anstrain1 = answers_train[:,0].flatten()
+anstrain2 = answers_train[:,1].flatten()
+anstest1 = answers_test[:,0].flatten()
+anstest2 = answers_test[:,1].flatten()
 
 
 # print('-')
@@ -273,7 +225,7 @@ question = Input((query_maxlen,))
 # embed the input sequence into a sequence of vectors
 input_encoder_m = Sequential()
 input_encoder_m.add(Embedding(input_dim=vocab_size,
-                              output_dim=64))
+                              output_dim=100))
 input_encoder_m.add(Dropout(0.3))
 # output: (samples, story_maxlen, embedding_dim)
 
@@ -287,7 +239,7 @@ input_encoder_c.add(Dropout(0.3))
 # embed the question into a sequence of vectors
 question_encoder = Sequential()
 question_encoder.add(Embedding(input_dim=vocab_size,
-                               output_dim=64,
+                               output_dim=100,
                                input_length=query_maxlen))
 question_encoder.add(Dropout(0.3))
 # output: (samples, query_maxlen, embedding_dim)
@@ -316,19 +268,24 @@ answer = concatenate([response, question_encoded])
 answer = LSTM(32)(answer)  # (samples, 32)
 
 # one regularization layer -- more would probably be needed.
-answer = Dropout(0.3)(answer)
-answer = Dense(vocab_size)(answer)  # (samples, vocab_size)
+answer1 = Dropout(0.3)(answer)
+answer1 = Dense(vocab_size)(answer1)  # (samples, vocab_size)
 # we output a probability distribution over the vocabulary
-answer = Activation('softmax')(answer)
-
+answer1 = Activation('softmax')(answer1)
 # build the final model
-model = Model([input_sequence, question], answer)
+
+answer2 = Dropout(0.3)(answer)
+answer2 = Dense(vocab_size)(answer2)  # (samples, vocab_size)
+# we output a probability distribution over the vocabulary
+answer2 = Activation('softmax')(answer2)
+
+model = Model(inputs=[input_sequence, question], outputs=[answer1])
 model.compile(optimizer='rmsprop', loss='sparse_categorical_crossentropy',
               metrics=['accuracy'])
 
 # print(answers_train.shape)
 # train
-model.fit([inputs_train, queries_train], answers_train,
+model.fit([inputs_train, queries_train], [anstrain1],
           batch_size=32,
-          epochs=1,
-          validation_data=([inputs_test, queries_test], answers_test))
+          epochs=5,
+          validation_data=([inputs_test, queries_test], [anstest1]))

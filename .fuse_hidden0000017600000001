@@ -1,0 +1,93 @@
+import sklearn
+import numpy as np
+import re
+import nltk
+import json
+import os
+import sys
+import gensim
+from nltk.tokenize import RegexpTokenizer
+from sklearn.metrics.pairwise import cosine_similarity 
+from gensim.scripts.glove2word2vec import glove2word2vec
+from nltk.tokenize import sent_tokenize
+from gensim.models.keyedvectors import KeyedVectors
+from nltk.stem import WordNetLemmatizer
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
+from nltk.stem.snowball import SnowballStemmer
+# sbstemmer = SnowballStemmer('english')
+porter_stemmer = PorterStemmer()
+wordnet_lemmatizer = WordNetLemmatizer()
+tokenizer = RegexpTokenizer(r'\w+')
+
+# glove_input_file = './glove/glove.6B.50d.txt'
+# word2vec_output_file = './glove/glove.6B.50d.txt.word2vec'
+# glove2word2vec(glove_input_file, word2vec_output_file)
+# word2vec_output_file = './glove/glove.6B.50d.txt.word2vec'
+# glove_model = gensim.models.KeyedVectors.load_word2vec_format(word2vec_output_file, binary=False)
+
+
+word2vec_output_file = './glove/glove.6B.50d.txt.word2vec'
+glove_model = KeyedVectors.load_word2vec_format(word2vec_output_file, binary=False)
+
+
+class MeanEmbeddingVectorizer(object):
+    def __init__(self, word2vec):
+        self.word2vec = word2vec
+        self.dim = 50
+
+    def fit(self, X, y):
+        return self
+
+    def transform(self, X):
+        return np.array([
+            np.mean([self.word2vec[w] for w in words if w in self.word2vec]
+                    or [np.zeros(self.dim)], axis=0)
+            for words in X
+        ])
+
+def our_tokenizer(data):
+    x_tokens = tokenizer.tokenize(data.lower())
+    stop_words = set(stopwords.words('english'))
+    tokens = [wordnet_lemmatizer.lemmatize(w) for w in x_tokens if not w in stop_words]
+    return tokens
+
+context_file = open(os.path.join('./data/', 'train_context'), 'r')
+c = context_file.read()
+context = re.split('\n' + '-' + '\n', c)
+del c
+
+question_file = open(os.path.join('./data/', 'train_question'), 'r')
+c = question_file.read()
+questions = re.split('\n' + '-' + '\n', c)
+del c
+
+Average_vector = MeanEmbeddingVectorizer(glove_model)
+
+c = context[1]
+q = questions[1]
+
+all_sent = sent_tokenize(c)
+all_ques = re.split('\n', q)
+
+sent_tokens = []
+for sent in all_sent:
+    tokens = our_tokenizer(sent)
+    sent_tokens.append(tokens)
+
+sent_vec = Average_vector.transform(sent_tokens)
+
+
+que_tokens = []
+for que in all_ques:
+    tokens = our_tokenizer(que)
+    que_tokens.append(tokens)
+
+ques_vec = Average_vector.transform(que_tokens)
+
+x = cosine_similarity(ques_vec,sent_vec)
+print(all_sent)
+print(all_ques)
+for i in range(len(x)):
+    index = np.argmax(x[i])
+    print(x[i],index)
