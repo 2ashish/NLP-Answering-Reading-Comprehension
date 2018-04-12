@@ -27,7 +27,7 @@ wordnet_lemmatizer = WordNetLemmatizer()
 tokenizer = RegexpTokenizer(r'[^\s]+')
 
 
-NUMCONTEXT = 1000
+NUMCONTEXT = 100
 
 def tokenize(sent):
     '''Return the tokens of a sentence including punctuation.
@@ -162,6 +162,7 @@ for c in context:
             k+=1
         que.append(que_tokenizer(all_ques[j]))
         ans.append([st,en])
+        #ans.append(st)
     i+=1
 
 print(len(inp))
@@ -197,6 +198,7 @@ anstrain1 = answers_train[:,0].flatten()
 anstrain2 = answers_train[:,1].flatten()
 anstest1 = answers_test[:,0].flatten()
 anstest2 = answers_test[:,1].flatten()
+print(anstrain1[0])
 
 
 # print('-')
@@ -266,20 +268,24 @@ answer = concatenate([response, question_encoded])
 # the original paper uses a matrix multiplication for this reduction step.
 # we choose to use a RNN instead.
 answer = LSTM(32)(answer)  # (samples, 32)
-
+answer = Dropout(0.3)(answer)
+answer = Dense(vocab_size)(answer)  # (samples, vocab_size)
+# we output a probability distribution over the vocabulary
+answer = Activation('softmax')(answer)
 # one regularization layer -- more would probably be needed.
-answer1 = Dropout(0.3)(answer)
-answer1 = Dense(vocab_size)(answer1)  # (samples, vocab_size)
-# we output a probability distribution over the vocabulary
-answer1 = Activation('softmax')(answer1)
-# build the final model
+# answer1 = Dropout(0.3)(answer)
+# answer1 = Dense(vocab_size)(answer1)  # (samples, vocab_size)
+# # we output a probability distribution over the vocabulary
+# answer1 = Activation('softmax')(answer1)
+# # build the final model
 
-answer2 = Dropout(0.3)(answer)
-answer2 = Dense(vocab_size)(answer2)  # (samples, vocab_size)
-# we output a probability distribution over the vocabulary
-answer2 = Activation('softmax')(answer2)
+# answer2 = Dropout(0.3)(answer)
+# answer2 = Dense(vocab_size)(answer2)  # (samples, vocab_size)
+# # we output a probability distribution over the vocabulary
+# answer2 = Activation('softmax')(answer2)
 
-model = Model(inputs=[input_sequence, question], outputs=[answer1])
+# model = Model(inputs=[input_sequence, question], outputs=[answer1])
+model = Model([input_sequence, question], answer)
 model.compile(optimizer='rmsprop', loss='sparse_categorical_crossentropy',
               metrics=['accuracy'])
 
@@ -287,5 +293,5 @@ model.compile(optimizer='rmsprop', loss='sparse_categorical_crossentropy',
 # train
 model.fit([inputs_train, queries_train], [anstrain1],
           batch_size=32,
-          epochs=5,
+          epochs=10,
           validation_data=([inputs_test, queries_test], [anstest1]))
