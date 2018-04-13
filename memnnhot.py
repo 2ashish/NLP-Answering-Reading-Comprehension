@@ -184,7 +184,7 @@ for c in context:
 print(len(inp))
 print(inp[0])
 print(que[0])
-print(ans[1])
+print(ans[0])
 
 vocab = set()
 for i in range(0,len(inp)):
@@ -199,7 +199,9 @@ print(story_maxlen,query_maxlen)
 
 word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
 inputs, queries, answers = vectorize_stories(inp,que,ans)
-print(answers.shape)
+print(inputs[0])
+print(queries[0])
+print(answers[0])
 #divide in training and testing
 k= int(math.floor(0.8*len(inp)))
 # print(k)
@@ -235,56 +237,56 @@ answers_test = answers[k:len(inp)]
 # print('Compiling...')
 
 #placeholders
-# input_sequence = Input((story_maxlen,))
-# question = Input((query_maxlen,))
+input_sequence = Input((story_maxlen,))
+question = Input((query_maxlen,))
 
-# # encoders
-# # embed the input sequence into a sequence of vectors
-# input_encoder_m = Sequential()
-# input_encoder_m.add(Embedding(input_dim=vocab_size,
-#                               output_dim=100))
-# input_encoder_m.add(Dropout(0.3))
-# # output: (samples, story_maxlen, embedding_dim)
+# encoders
+# embed the input sequence into a sequence of vectors
+input_encoder_m = Sequential()
+input_encoder_m.add(Embedding(input_dim=vocab_size,
+                              output_dim=100))
+input_encoder_m.add(Dropout(0.3))
+# output: (samples, story_maxlen, embedding_dim)
 
-# # embed the input into a sequence of vectors of size query_maxlen
-# input_encoder_c = Sequential()
-# input_encoder_c.add(Embedding(input_dim=vocab_size,
-#                               output_dim=query_maxlen))
-# input_encoder_c.add(Dropout(0.3))
-# # output: (samples, story_maxlen, query_maxlen)
+# embed the input into a sequence of vectors of size query_maxlen
+input_encoder_c = Sequential()
+input_encoder_c.add(Embedding(input_dim=vocab_size,
+                              output_dim=query_maxlen))
+input_encoder_c.add(Dropout(0.3))
+# output: (samples, story_maxlen, query_maxlen)
 
-# # embed the question into a sequence of vectors
-# question_encoder = Sequential()
-# question_encoder.add(Embedding(input_dim=vocab_size,
-#                                output_dim=100,
-#                                input_length=query_maxlen))
-# question_encoder.add(Dropout(0.3))
-# # output: (samples, query_maxlen, embedding_dim)
+# embed the question into a sequence of vectors
+question_encoder = Sequential()
+question_encoder.add(Embedding(input_dim=vocab_size,
+                               output_dim=100,
+                               input_length=query_maxlen))
+question_encoder.add(Dropout(0.3))
+# output: (samples, query_maxlen, embedding_dim)
 
-# # encode input sequence and questions (which are indices)
-# # to sequences of dense vectors
-# input_encoded_m = input_encoder_m(input_sequence)
-# input_encoded_c = input_encoder_c(input_sequence)
-# question_encoded = question_encoder(question)
+# encode input sequence and questions (which are indices)
+# to sequences of dense vectors
+input_encoded_m = input_encoder_m(input_sequence)
+input_encoded_c = input_encoder_c(input_sequence)
+question_encoded = question_encoder(question)
 
-# # compute a 'match' between the first input vector sequence
-# # and the question vector sequence
-# # shape: `(samples, story_maxlen, query_maxlen)`
-# match = dot([input_encoded_m, question_encoded], axes=(2, 2))
-# match = Activation('softmax')(match)
+# compute a 'match' between the first input vector sequence
+# and the question vector sequence
+# shape: `(samples, story_maxlen, query_maxlen)`
+match = dot([input_encoded_m, question_encoded], axes=(2, 2))
+match = Activation('softmax')(match)
 
-# # add the match matrix with the second input vector sequence
-# response = add([match, input_encoded_c])  # (samples, story_maxlen, query_maxlen)
-# response = Permute((2, 1))(response)  # (samples, query_maxlen, story_maxlen)
+# add the match matrix with the second input vector sequence
+response = add([match, input_encoded_c])  # (samples, story_maxlen, query_maxlen)
+response = Permute((2, 1))(response)  # (samples, query_maxlen, story_maxlen)
 
 # # concatenate the match matrix with the question vector sequence
-# answer = concatenate([response, question_encoded])
+answer = concatenate([response, question_encoded])
 
 # # # the original paper uses a matrix multiplication for this reduction step.
 # # # we choose to use a RNN instead.
-# answer = LSTM(32)(answer)  # (samples, 32)
-# answer = Dropout(0.3)(answer)
-# answer = Dense(vocab_size ,activation='softmax')(answer)  # (samples, vocab_size)
+answer = LSTM(32)(answer)  # (samples, 32)
+answer = Dropout(0.3)(answer)
+answer = Dense(vocab_size ,activation='softmax')(answer)  # (samples, vocab_size)
 # we output a probability distribution over the vocabulary
 #answer = Activation('softmax')(answer)
 # one regularization layer -- more would probably be needed.
@@ -300,40 +302,44 @@ answers_test = answers[k:len(inp)]
 # answer2 = Activation('softmax')(answer2)
 
 # model = Model(inputs=[input_sequence, question], outputs=[answer1])
-# model = Model([input_sequence, question], answer)
+model = Model([input_sequence, question], answer)
 # model.compile(optimizer='rmsprop', loss='sparse_categorical_crossentropy',
 #               metrics=['accuracy'])
 
-
 RNN = recurrent.LSTM
-EMBED_HIDDEN_SIZE = 50
+EMBED_HIDDEN_SIZE = 100
+
+# model = Sequential()
+# model.add(RNN(EMBED_HIDDEN_SIZE, return_sequences=False))(answer)
+# model.add(Dropout(0.3))
+# model.add(Dense(vocab_size, activation='softmax'))
 
 
-sentrnn = Sequential()
-sentrnn.add(Embedding(vocab_size, EMBED_HIDDEN_SIZE,
-                      input_length=story_maxlen))
-sentrnn.add(Dropout(0.3))
+# sentrnn = Sequential()
+# sentrnn.add(Embedding(vocab_size, EMBED_HIDDEN_SIZE,
+#                       input_length=story_maxlen))
+# sentrnn.add(Dropout(0.3))
 
-qrnn = Sequential()
-qrnn.add(Embedding(vocab_size, EMBED_HIDDEN_SIZE,
-                   input_length=query_maxlen))
-qrnn.add(Dropout(0.3))
-qrnn.add(RNN(EMBED_HIDDEN_SIZE, return_sequences=False))
-qrnn.add(RepeatVector(story_maxlen))
+# qrnn = Sequential()
+# qrnn.add(Embedding(vocab_size, EMBED_HIDDEN_SIZE,
+#                    input_length=query_maxlen))
+# qrnn.add(Dropout(0.3))
+# qrnn.add(RNN(EMBED_HIDDEN_SIZE, return_sequences=False))
+# qrnn.add(RepeatVector(story_maxlen))
 
-model = Sequential()
-model.add(Merge([sentrnn, qrnn], mode='sum'))
-model.add(RNN(EMBED_HIDDEN_SIZE, return_sequences=False))
-model.add(Dropout(0.3))
-model.add(Dense(vocab_size, activation='softmax'))
+# model = Sequential()
+# model.add(Merge([sentrnn, qrnn], mode='sum'))
+# model.add(RNN(EMBED_HIDDEN_SIZE, return_sequences=False))
+# model.add(Dropout(0.3))
+# model.add(Dense(vocab_size, activation='softmax'))
 
-model.compile(optimizer='adam',
+model.compile(optimizer='rmsprop',
               loss='categorical_crossentropy',
               metrics=['accuracy'])
 
 # print(answers_train.shape)
 # train
 model.fit([inputs_train, queries_train], answers_train,
-          batch_size=64,
-          epochs=40,
+          batch_size=32,
+          epochs=120,
           validation_data=([inputs_test, queries_test], answers_test))
