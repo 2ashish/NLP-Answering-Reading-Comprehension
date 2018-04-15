@@ -27,59 +27,7 @@ wordnet_lemmatizer = WordNetLemmatizer()
 tokenizer = RegexpTokenizer(r'[^\s]+')
 
 
-NUMCONTEXT = 100
-
-def tokenize(sent):
-    '''Return the tokens of a sentence including punctuation.
-    >>> tokenize('Bob dropped the apple. Where is the apple?')
-    ['Bob', 'dropped', 'the', 'apple', '.', 'Where', 'is', 'the', 'apple', '?']
-    '''
-    return [x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
-
-
-def parse_stories(lines, only_supporting=False):
-    '''Parse stories provided in the bAbi tasks format
-    If only_supporting is true, only the sentences
-    that support the answer are kept.
-    '''
-    data = []
-    story = []
-    for line in lines:
-        line = line.decode('utf-8').strip()
-        nid, line = line.split(' ', 1)
-        nid = int(nid)
-        if nid == 1:
-            story = []
-        if '\t' in line:
-            q, a, supporting = line.split('\t')
-            q = tokenize(q)
-            substory = None
-            if only_supporting:
-                # Only select the related substory
-                supporting = map(int, supporting.split())
-                substory = [story[i - 1] for i in supporting]
-            else:
-                # Provide all the substories
-                substory = [x for x in story if x]
-            data.append((substory, q, a))
-            story.append('')
-        else:
-            sent = tokenize(line)
-            story.append(sent)
-    return data
-
-
-def get_stories(f, only_supporting=False, max_length=None):
-    '''Given a file name, read the file,
-    retrieve the stories,
-    and then convert the sentences into a single story.
-    If max_length is supplied,
-    any stories longer than max_length tokens will be discarded.
-    '''
-    data = parse_stories(f.readlines(), only_supporting=only_supporting)
-    flatten = lambda data: reduce(lambda x, y: x + y, data)
-    data = [(flatten(story), q, answer) for story, q, answer in data if not max_length or len(flatten(story)) < max_length]
-    return data
+NUMCONTEXT = 1000
 
 
 def vectorize_stories(inp,que,ans):
@@ -88,8 +36,8 @@ def vectorize_stories(inp,que,ans):
         inputs.append([word_idx[w] for w in inp[i]])
         queries.append([word_idx[w] for w in que[i]])
         # answers.append(ans)
-    return (pad_sequences(inputs, maxlen=story_maxlen),
-            pad_sequences(queries, maxlen=query_maxlen),
+    return (pad_sequences(inputs, maxlen=story_maxlen,padding='post'),
+            pad_sequences(queries, maxlen=query_maxlen,padding='post'),
             np.array(ans))
 
 def para_tokenizer(data):
@@ -198,26 +146,8 @@ anstrain1 = answers_train[:,0].flatten()
 anstrain2 = answers_train[:,1].flatten()
 anstest1 = answers_test[:,0].flatten()
 anstest2 = answers_test[:,1].flatten()
-print(anstrain1[0])
+print(inputs_train[0])
 
-
-# print('-')
-# print('inputs: integer tensor of shape (samples, max_length)')
-# print('inputs_train shape:', inputs_train.shape)
-# print('inputs_test shape:', inputs_test.shape)
-# print(inputs_train[0])
-# print('-')
-# print('queries: integer tensor of shape (samples, max_length)')
-# print('queries_train shape:', queries_train.shape)
-# print('queries_test shape:', queries_test.shape)
-# print(queries_train[0])
-# print('-')
-# print('answers: binary (1 or 0) tensor of shape (samples, vocab_size)')
-# print('answers_train shape:', answers_train.shape)
-# print('answers_test shape:', answers_test.shape)
-# print(answers_train[1])
-# print('-')
-# print('Compiling...')
 
 # placeholders
 input_sequence = Input((story_maxlen,))
