@@ -220,41 +220,25 @@ question_encoder.add(Embedding(num_words,
 
 context_encoded = context_encoder(input_sequence)
 question_encoded = question_encoder(question)
-encoder = Bidirectional(LSTM(units=W,
-                             return_sequences=True,
-                             dropout=dropout_rate,
-                             unroll=unroll))
+encoder = Bidirectional(LSTM(units=W,return_sequences=True))
 
 passage_encoding = context_encoded
 passage_encoding = encoder(passage_encoding)
-passage_encoding = TimeDistributed(
-    Dense(W,
-          use_bias=False,
-          trainable=True,
-          weights=np.concatenate((np.eye(W), np.eye(W)), axis=1)))(passage_encoding)
+passage_encoding = TimeDistributed(Dense(W,use_bias=False,trainable=True,weights=np.concatenate((np.eye(W), np.eye(W)), axis=1)))(passage_encoding)
 
 question_encoding = question_encoded
 question_encoding = encoder(question_encoding)
-question_encoding = TimeDistributed(
-    Dense(W,
-          use_bias=False,
-          trainable=True,
-          weights=np.concatenate((np.eye(W), np.eye(W)), axis=1)))(question_encoding)
+question_encoding = TimeDistributed(Dense(W,use_bias=False,trainable=True,weights=np.concatenate((np.eye(W), np.eye(W)), axis=1)))(question_encoding)
 
-'''Attention over question'''
-# compute the importance of each step
+
 question_attention_vector = TimeDistributed(Dense(1))(question_encoding)
 question_attention_vector = Lambda(lambda q: keras.activations.softmax(q, axis=1))(question_attention_vector)
 print(question_attention_vector)
 
-# apply the attention
 question_attention_vector = Lambda(lambda q: q[0] * q[1])([question_encoding, question_attention_vector])
 question_attention_vector = Lambda(lambda q: K.sum(q, axis=1))(question_attention_vector)
 question_attention_vector = RepeatVector(N)(question_attention_vector)
 
-'''Answer span prediction'''
-
-# Answer start prediction
 answer_start = Lambda(lambda arg:
                       concatenate([arg[0], arg[1], arg[2]]))([
     passage_encoding,
@@ -265,7 +249,7 @@ answer_start = TimeDistributed(Dense(W, activation='relu'))(answer_start)
 answer_start = TimeDistributed(Dense(1))(answer_start)
 answer_start = Flatten()(answer_start)
 answer_start = Activation('softmax')(answer_start)
-# Answer end prediction depends on the start prediction
+
 def s_answer_feature(x):
     maxind = K.argmax(
         x,
