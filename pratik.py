@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[17]:
 
 
 from __future__ import print_function
@@ -10,11 +10,12 @@ import numpy as np
 from keras import backend as K
 import keras
 from keras.models import Model
-from keras.layers import Input, Dense, RepeatVector, Masking, Dropout, Flatten, Activation, Reshape, Lambda, Permute, merge, multiply, concatenate
+from keras.layers import Input, Dense, RepeatVector, Masking, Dropout, Flatten, Activation, Reshape, Lambda, Permute,Add ,merge, multiply, concatenate
 from keras.layers.merge import Concatenate
 from keras.layers.wrappers import Bidirectional, TimeDistributed
 from keras.layers.recurrent import GRU, LSTM
 from keras.layers.pooling import GlobalMaxPooling1D
+from keras.activations import *
 from keras.utils import to_categorical
 from keras.models import Sequential, Model
 from keras.layers.embeddings import Embedding
@@ -38,7 +39,7 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.text import text_to_word_sequence
 
 
-# In[19]:
+# In[2]:
 
 
 context_file = open(os.path.join('./data/', 'train_context'), 'r')
@@ -66,7 +67,7 @@ BASE_DIR = ''
 GLOVE_DIR = os.path.join(BASE_DIR, 'glove')
 MAX_SEQUENCE_LENGTH = 500
 
-MAX_NUM_WORDS = 100000
+MAX_NUM_WORDS = 10000000
 EMBEDDING_DIM = 50
 MAX_QUE_LENGTH = EMBEDDING_DIM
 VALIDATION_SPLIT = 0.8
@@ -106,14 +107,7 @@ def get_char_embedding(word):
     return x/count
 
 
-# In[46]:
-
-
-# print(embeddings_index['bhangale'])
-# print(type(get_char_embedding('bhangale')))
-
-
-# In[20]:
+# In[4]:
 
 
 tokenizer = RegexpTokenizer(r'[^\s]+')
@@ -194,24 +188,16 @@ train_ans_end = to_categorical(answers[:,1],MAX_SEQUENCE_LENGTH)
 
 split = int(NUMCONTEXT*VALIDATION_SPLIT)
 train_context = train_con[0:split]
-val_context = train_con[split+1:NUMCONTEXT]
+val_context = train_con[split:NUMCONTEXT]
 train_question = train_que[0:split]
-val_question = train_que[split+1:NUMCONTEXT]
+val_question = train_que[split:NUMCONTEXT]
 train_answer_start = train_ans_start[0:split]
-val_answer_start = train_ans_start[split+1:NUMCONTEXT]
+val_answer_start = train_ans_start[split:NUMCONTEXT]
 train_answer_end = train_ans_end[0:split]
-val_answer_end = train_ans_end[split+1:NUMCONTEXT]
+val_answer_end = train_ans_end[split:NUMCONTEXT]
 
 
-# In[57]:
-
-
-# with open('context_char.pickle','wb') as fd:
-#     pickle.dump(chr_embedded_context,fd)
-
-
-# In[21]:
-
+# In[5]:
 
 
 num_words = min(MAX_NUM_WORDS, len(word_index) + 1)
@@ -228,7 +214,7 @@ for word, i in word_index.items():
 print(embedding_matrix.shape)
 
 
-# In[22]:
+# In[52]:
 
 
 W = EMBEDDING_DIM
@@ -258,64 +244,68 @@ encoder = Bidirectional(LSTM(units=W,return_sequences=True))
 
 passage_encoding = context_encoded
 passage_encoding = encoder(passage_encoding)
-passage_encoding = Dense(W,use_bias=False,trainable=True)(passage_encoding)
+passage_encoding = Dense(W,use_bias=False,trainable=True)(passage_encoding) #(ex, MAX_SEQUENCE_LENGTH,EMBEDDING_DIM)
 
 question_encoding = question_encoded
 question_encoding = encoder(question_encoding)
-question_encoding = Dense(W,use_bias=False,trainable=True)(question_encoding)
+question_encoding = Dense(W,use_bias=False,trainable=True)(question_encoding) #(ex, MAX_QUE_LENGTH,EMBEDDING_DIM)
 
-question_attention_vector = Dense(1)(question_encoding)
-# question_attention_vector = Activation('softmax')(question_attention_vector)
-question_attention_vector = Lambda(lambda q: keras.activations.softmax(q, axis=1))(question_attention_vector)
-print(question_attention_vector)
+## Weighted Representation of question
 
-question_attention_vector = Lambda(lambda q: q[0] * q[1])([question_encoding, question_attention_vector])
-question_attention_vector = Lambda(lambda q: K.sum(q, axis=1))(question_attention_vector)
-question_attention_vector = RepeatVector(N)(question_attention_vector)
+question_attention = Dense(1)(question_encoding) #(ex, MAX_QUE_LENGTH,1)
+question_attention = Activation('softmax')(question_attention) #(ex, MAX_QUE_LENGTH,1)
 
-ans_st = multiply([passage_encoding, question_attention_vector])
-answer_start = concatenate([passage_encoding,question_attention_vector, ans_st])
+question_attention = multiply([question_encoding, question_attention]) #(ex, MAX_QUE_LENGTH,MAX_QUE_LENGTH)
+question_attention = Lambda(lambda q: K.sum(q, axis=1))(question_attention) #(ex, MAX_QUE_LENGTH)
+
+##
+question_attention = RepeatVector(N)(question_attention) #(ex, MAX_QUE_LENGTH,MAX_QUE_LENGTH)
+
+
+## FeedForward Layer to predict answer starting
+ans_st = multiply([passage_encoding, question_attention])
+answer_start = concatenate([passage_encoding,question_attention, ans_st])
 
 answer_start = Dense(W, activation='relu')(answer_start)
 answer_start = Dense(1)(answer_start)
 answer_start = Flatten()(answer_start)
 answer_start = Activation('softmax')(answer_start)
-def s_answer_feature(x):
-    maxind = K.argmax(
-        x,
-        axis=1,
-    )
-    return maxind
 
-x = Lambda(lambda x: K.tf.cast(s_answer_feature(x), dtype=K.tf.int32))(answer_start)
+
+##Passing starting embedding of answer predicted
+x = Lambda(lambda x: K.argmax(x,axis=1))(answer_start)
 start_feature = Lambda(lambda arg: K.tf.gather_nd(arg[0], K.tf.stack(
     [K.tf.range(K.tf.shape(arg[1])[0]), K.tf.cast(arg[1], K.tf.int32)], axis=1)))([passage_encoding, x])
+
 start_feature = RepeatVector(N)(start_feature)
+##
 
 
-ans_1 = multiply([passage_encoding, question_attention_vector])
+## FeedForward Layer to predict answer ending
+ans_1 = multiply([passage_encoding, question_attention])
 ans_2 = multiply([passage_encoding, start_feature])
-answer_end = concatenate([passage_encoding,question_attention_vector,start_feature, ans_1,ans_2])
+answer_end = concatenate([passage_encoding,question_attention,start_feature, ans_1,ans_2])
 
 answer_end = Dense(W, activation='relu')(answer_end)
 answer_end = Dense(1)(answer_end)
 answer_end = Flatten()(answer_end)
 answer_end = Activation('softmax')(answer_end)
+##
+
 
 inputs = [input_sequence, question]
 outputs = [answer_start, answer_end]
 model = Model(inputs,outputs)
-model.summary()
-model.compile(optimizer='rmsprop', loss='categorical_crossentropy',
-              metrics=['accuracy'])
+# model.summary()
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
 
-# In[23]:
+# In[53]:
 
 
 print(train_context.shape,train_question.shape,train_answer_start.shape,train_answer_end.shape)
 model.fit([train_context, train_question], [train_answer_start,train_answer_end],
           batch_size=30,
-          epochs=20,
+          epochs=1,
           validation_data=([val_context, val_question], [val_answer_start,val_answer_end]))
 
